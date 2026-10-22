@@ -145,14 +145,34 @@ once, download many. Phase 3 writes `_待手动下载.md`.
    fastest way to get flagged.
 7. If Cloudflare blocks you on one egress, switch egress (step 0).
 
-**Recovery** when the gate still appears:
+**Recovery** — act like a human (implemented in `zju_sd_fetch.py`):
 
-- Detect via body text / HTML markers: `Are you a robot`, `cf-turnstile`,
-  `challenge-platform`.
-- Try an automatic click on the Turnstile box (top document *and* all frames).
-- Otherwise keep the **headed** browser open and poll for up to ~4 minutes, telling
-  the user to tick the box — then continue automatically. Use `--no-hitl` only for
-  unattended runs.
+1. Detect via body text / HTML markers: `Are you a robot`, `cf-turnstile`,
+   `challenge-platform`.
+2. **Wait for the widget** — up to 40 s. Turnstile is loaded with
+   `…/turnstile/v0/…/api.js?render=explicit`, so nothing exists for the first
+   10–30 s. Do *not* reload impatiently, that restarts the challenge.
+3. Collect the challenge frames: `page.frames` filtered on
+   `challenges.cloudflare.com` **and** `blob:` URLs, then **recursively** their
+   child frames (`frame.child_frames`) — Turnstile nests one level deep.
+4. Click like a person: `page.mouse.move(..., steps=12)` along a short path, a
+   150–500 ms pause, then `page.mouse.click(x, y)`. Prefer
+   `input[type=checkbox]` / `span.cb-wrapper` / `.ctp-checkbox-label`; if none of
+   those are visible, click the frame's left edge at its vertical centre (that is
+   where the box sits).
+5. Re-check for up to ~60 s; if it clears, continue automatically.
+
+**Known limit (measured, not guessed):** the widget renders into sandboxed
+`about:srcdoc` / `about:blank` frames. When that happens the checkbox is not
+reachable from the DOM at all — `frame_element().bounding_box()` and
+`document.body.innerHTML` both error out, so no automatic click can land. In that
+state:
+
+- Keep the **headed** browser open and wait — a real person sees and clicks the box
+  on screen, and the script resumes by itself (`--no-hitl` for unattended runs).
+- Or switch egress and retry (`challenges.cloudflare.com` itself may be blocked on
+  some campus networks).
+- Or accept the cooldown.
 - Elsevier has a *second*, separate gate for PDFs: the response is an HTML page
   containing `/craft/challenge/pdf/`. It is not Cloudflare and XHR cannot solve it.
   Escalate: in-page `fetch()` → **top-level navigation** (lets Chrome play the
