@@ -170,48 +170,200 @@ def human_pause(lo=1.2, hi=3.0):
     time.sleep(random.uniform(lo, hi))
 
 
+JS_WIDGET = r"""
+() => {
+    const fr = [...document.querySelectorAll('iframe')].map(f => (f.src || ''));
+    return {iframes: fr.slice(0, 6), n: fr.length,
+            hasBox: !!document.querySelector('input[type="checkbox"], .ctp-checkbox-label, span.cb-wrapper')};
+}
+"""
+
+CHECKBOX_SELECTORS = [
+    'input[type="checkbox"]',
+    'span.cb-wrapper',
+    '.ctp-checkbox-label',
+    '#cf-turnstile input',
+    'label.ctp-checkbox-label',
+    'body',
+]
+
+
+def human_click(page, loc):
+    """Move the pointer along a short path (steps) then click — like a person."""
+    try:
+        box = loc.bounding_box()
+        if box:
+            x = box['x'] + box['width'] / 2.0
+            y = box['y'] + box['height'] / 2.0
+            page.mouse.move(max(0, x - 40), max(0, y - 25), steps=12)
+            page.wait_for_timeout(random.uniform(180, 500))
+            page.mouse.move(x, y, steps=10)
+            page.wait_for_timeout(random.uniform(120, 350))
+            page.mouse.click(x, y)
+            return True
+    except Exception:
+        pass
+    try:
+        loc.click(timeout=5000)
+        return True
+    except Exception:
+        return False
+
+
+def try_solve_widget(page):
+    """Click the Turnstile checkbox the way a human would. Returns True if clicked."""
+    # widget usually lives in a challenges.cloudflare.com iframe
+    frames = [f for f in page.frames
+              if 'challenges.cloudflare' in (f.url or '') or 'turnstile' in (f.url or '').lower()]
+    targets = frames if frames else [page.main_frame]
+    for fr in targets:
+        for sel in CHECKBOX_SELECTORS:
+            try:
+                loc = fr.locator(sel).first
+                if loc.count() == 0:
+                    continue
+                if not loc.is_visible(timeout=1500):
+                    continue
+                if human_click(page, loc):
+                    log('  [challenge] 拟人点击验证框: %s (%s)' % (sel, 'iframe' if frames else 'document'))
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def cloudflare_frames(page):
+    """Turnstile renders into challenges.cloudflare.com frames and nested blob: frames."""
+    out = []
+    for f in page.frames:
+        u = f.url or ''
+        if 'challenges.cloudflare' in u or u.startswith('blob:'):
+            out.append(f)
+    return out
+
+
+def wait_widget(page, seconds=35):
+    """Wait until the widget frames exist. It is rendered explicitly by
+    .../turnstile/v0/api.js?render=explicit, so it can take 10-30 s."""
+    end = time.time() + seconds
+    while time.time() < end:
+        fr = cloudflare_frames(page)
+        if fr:
+            return fr
+        try:
+            if page.locator('input[type="checkbox"]').count() and \
+               page.locator('input[type="checkbox"]').first.is_visible(timeout=1000):
+                return [page.main_frame]
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
+    return []
+
+
+def _all_frames(frames, depth=0, seen=None):
+    """Flatten frames + their children (Turnstile nests a blob: frame)."""
+    seen = seen if seen is not None else set()
+    out = []
+    for f in frames:
+        key = id(f)
+        if key in seen or depth > 3:
+            continue
+        seen.add(key)
+        out.append(f)
+        try:
+            out.extend(_all_frames(list(f.child_frames), depth + 1, seen))
+        except Exception:
+            pass
+    return out
+
+
+def click_widget_coords(page, frame):
+    """Click where the Turnstile checkbox sits: left edge, vertically centred."""
+    try:
+        handle = frame.frame_element()
+        box = handle.bounding_box()
+        if not box:
+            return False
+        x = box['x'] + 24
+        y = box['y'] + box['height'] / 2.0
+        if box['width'] < 12 or box['height'] < 12:
+            return False
+        page.mouse.move(box['x'] + box['width'] / 2.0, max(0, box['y'] - 60), steps=14)
+        page.wait_for_timeout(random.uniform(200, 500))
+        page.mouse.move(x, y, steps=12)
+        page.wait_for_timeout(random.uniform(150, 400))
+        page.mouse.click(x, y)
+        return True
+    except Exception:
+        return False
+
+
+def try_solve_frames(page, frames):
+    for fr in _all_frames(frames):
+        for sel in ['input[type="checkbox"]', 'span.cb-wrapper', '.ctp-checkbox-label',
+                    '[role="checkbox"]', '.cb-lb', '#cf-chl-widget input', 'label']:
+            try:
+                loc = fr.locator(sel).first
+                if loc.count() == 0:
+                    continue
+                if not loc.is_visible(timeout=1500):
+                    continue
+                if human_click(page, loc):
+                    log('  [challenge] 拟人点击控件: %s' % sel)
+                    return True
+            except Exception:
+                continue
+        if click_widget_coords(page, fr):
+            log('  [challenge] 按坐标点击复选框（左侧、垂直居中）')
+            return True
+    return False
+
+
 def hitl_challenge(page, timeout=240, auto_click=True):
-    """Handle a Cloudflare challenge: try auto-click, else wait for a human."""
-    log('  [challenge] 检测到人机验证，尝试自动通过…')
+    """Solve the Cloudflare challenge: render widget -> human-like click -> verify,
+    and only if that is impossible fall back to waiting for a real user."""
+    log('  [challenge] 检测到人机验证，尝试按人类方式通过…')
     deadline = time.time() + timeout
     announced = False
     clicked = False
+    reloads = 0
+
     while time.time() < deadline:
         try:
             st = page.evaluate(JS_CHALLENGE_STATE)
         except Exception:
-            time.sleep(3)
+            time.sleep(2)
             continue
         if not st['robot']:
             log('  [challenge] 已通过')
             return True
+
         if auto_click and not clicked:
-            for sel in ['input[type="checkbox"]', '.cb-lb input', '#cf-turnstile input',
-                        'span.cb-wrapper', '.ctp-checkbox-label']:
-                try:
-                    el = page.query_selector(sel)
-                    if el and el.is_visible():
-                        el.click()
-                        clicked = True
-                        log('  [challenge] 已自动点击验证框 (%s)' % sel)
-                        break
-                except Exception:
-                    pass
-            for fr in page.frames:
-                try:
-                    box = fr.query_selector('input[type="checkbox"], .ctp-checkbox-label, span.cb-wrapper')
-                    if box and box.is_visible():
-                        box.click()
-                        clicked = True
-                        log('  [challenge] 已自动点击 iframe 内验证框')
-                        break
-                except Exception:
-                    pass
+            frames = wait_widget(page, 40)
+            if not frames:
+                if reloads < 1:
+                    reloads += 1
+                    log('  [challenge] 组件未渲染，刷新重试 (%d)' % reloads)
+                    try:
+                        page.reload(wait_until='domcontentloaded', timeout=60000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(4000)
+                    continue
+                log('  [challenge] 组件始终未渲染（challenges.cloudflare.com 可能被网络阻断）')
+            else:
+                log('  [challenge] 找到 %d 个验证框架，开始拟人点击…' % len(frames))
+                clicked = try_solve_frames(page, frames)
+                # give Cloudflare time to verify, then re-arm if still blocked
+                page.wait_for_timeout(6000)
+                continue
+
         if not announced:
             announced = True
-            log('  [challenge] >>> 需要人工：请在弹出的浏览器窗口里勾选 "I am human"，')
+            log('  [challenge] >>> 自动通过失败，需要人工：请在弹出的浏览器窗口勾选 "I am human"，')
             log('                完成后脚本会自动继续（最多等待 %d 秒）' % timeout)
         page.wait_for_timeout(2500)
+
     st = page.evaluate(JS_CHALLENGE_STATE)
     return not st['robot']
 
