@@ -1,0 +1,44 @@
+{
+  "name": "zju-mo-workspace",
+  "description": "默认 profile：浙大通行证（CAS OAuth2）登录 Mo 平台，下载实验虚拟机/在线工作区中的全部文件。文献批量下载仍走 scripts/zju_fetch.py。其他学校复制本文件改端点即可。",
+  "base": "https://mo.zju.edu.cn",
+  "auth": {
+    "type": "cas_oauth2",
+    "authorize_url": "https://zjuam.zju.edu.cn/cas/oauth2.0/authorize",
+    "client_id": "mU53a5ysj5jfo8PUvP",
+    "client_id_env": "SSO_CLIENT_ID",
+    "redirect_uri": "https://mo.zju.edu.cn/user/login",
+    "user_env": "ZJU_USER",
+    "pass_env": "ZJU_PASS",
+    "username_selector": "#username",
+    "password_selector": "#password",
+    "submit_selector": "#dl",
+    "token_storage": "localStorage",
+    "token_key": "token",
+    "token_header": "Authorization",
+    "token_prefix": "Bearer ",
+    "probe_url": "/pyapi/apps/{resource_id}?yml=true",
+    "ok_marker": "display_name",
+    "login_marker": "通行证登录"
+  },
+  "session_file": ".sso_session.json",
+  "default_resource_id": "",
+  "metadata_api": "/pyapi/apps/{resource_id}?yml=true&collaborators=true",
+  "metadata_fields": {
+    "display_name": "display_name",
+    "hub_name": "hub_name",
+    "hub_token": "hub_token"
+  },
+  "tree_api": "/pyapi/file/file_trees/{resource_id}?version=current",
+  "contents_api": "/hub_api/user/{hub_name}/api/contents/{path}?content=1",
+  "files_api": "/hub_api/user/{hub_name}/files/{path}",
+  "restart_api": "/pyapi/project/auth_hub/{resource_id}?action=start&hub_token={hub_token}&window_id={window_id}",
+  "hub_headers": {
+    "Authorization": "token {hub_token}"
+  },
+  "big_threshold": 8388608,
+  "rate_gap": 1.0,
+  "retries": 4,
+  "timeout": 45,
+  "stream_timeout": 180
+}

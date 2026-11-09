@@ -6,7 +6,10 @@ Springer, Web of Science...). From off campus you can borrow that IP through the
 WebVPN. Login uses the 上网账号 (NOT always the same password as 浙大通行证).
 
 The login form Encrypts the password with AES-CFB-128, key = iv = "wrdvpnisawesome!"
-(same construction as the site's own aes-js bundle).
+(same construction as the site's own aes-js bundle).  These are site-wide PUBLIC
+protocol constants shipped in the vendor's own front-end bundle -- not user
+credentials and not a deployment secret.  Override with ZJU_WEBVPN_KEY /
+ZJU_WEBVPN_IV env vars if you prefer no site identifier in a public checkout.
 
 Usage:
   python zju_webvpn.py login            # prints session info / verifies
@@ -26,8 +29,15 @@ import requests
 ROOT = 'https://webvpn.zju.edu.cn'
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
-KEY = b'wrdvpnisawesome!'
-IV = b'wrdvpnisawesome!'
+# Site-wide public protocol constants from the vendor's own aes-js bundle, NOT
+# user credentials and NOT a deployment secret.  Environment override keeps a
+# public checkout free of site identifiers if the operator prefers that.
+def _site_const(name, default):
+    return (os.environ.get(name) or default).encode('utf-8')
+
+
+KEY = _site_const('ZJU_WEBVPN_KEY', 'wrdvpnisawesome!')
+IV = _site_const('ZJU_WEBVPN_IV', 'wrdvpnisawesome!')
 
 
 def _encrypt_password(pwd: str) -> str:

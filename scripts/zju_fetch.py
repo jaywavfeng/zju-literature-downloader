@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Main CLI: turn a reference list into a folder of downloaded PDFs.
 
+This is the literature adapter of the campus-sso-resource-fetcher skill. All
+commands, flags and environment variables are unchanged; the general-purpose
+SSO resource CLI lives in sso_fetch.py.
+
     prepare  parse a reference list (文献.txt / docx / json) -> items.json
     fetch    run the source waterfall for every item -> PDFs
     verify   check that every expected PDF exists and is a valid PDF

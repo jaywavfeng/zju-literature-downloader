@@ -1,5 +1,10 @@
 # ZJU 访问协议逆向笔记（实测）
 
+本文件是 `campus-sso-resource-fetcher` 的**内置 ZJU 适配器**协议细节：浙大通行证
+CAS、WebVPN、ScienceDirect Shibboleth 的实测参数。与学校无关的通用模式（登录态
+检查、人机验证、资源定位、下载、重试、错误反馈）见 `sso_patterns.md`；可配端点
+见 `profiles/zju-mo-workspace.json`。文献下载链路仍直接依赖本文件的参数。
+
 ## 1. 浙大统一身份认证 / CAS（zjuam.zju.edu.cn）
 
 表单字段：`username` `password` `execution` `ys` `_eventId=submit` (`authcode` 仅当需要验证码)。
@@ -22,6 +27,9 @@
   `captcha` `needCaptcha` `captcha_id`。
 - 密码加密：AES-CFB-128（segment 16），`key = iv = "wrdvpnisawesome!"`，
   明文用 `'0'` 补到 16 的倍数，输出 `hex(iv) + hex(ct)[:len*2]`。
+  这些是网瑞达 WebVPN 产品自带的**站点公开常量**（前端 aes-js bundle 里就是
+  明文），全站/全部署共用，不是任何用户的凭据，也不是私有密钥；
+  `zju_webvpn.py` 支持用 `ZJU_WEBVPN_KEY` / `ZJU_WEBVPN_IV` 环境变量覆盖。
 - 已在别处登录 → 返回 `NEED_CONFIRM`，需 `POST /do-confirm-login`（会踢掉旧会话）。
 - 可用资源列表：`GET /user/portal_groups`（分组：校内资源导航 / **电子资源导航** /
   网络工具导航）。电子资源导航里有 Wiley、IEEE Xplore、Springer、WoS、JSTOR、

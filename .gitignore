@@ -8,3 +8,11 @@ __debug/
 __pycache__/
 *.part
 *.log
+
+# 通用层运行期产物（sso_fetch.py）—— 绝不入库
+.sso_session.json
+check.json
+login.json
+tree.json
+manifest.json
+verify.json
